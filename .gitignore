@@ -1,0 +1,8 @@
+node_modules/
+dist/
+tmp/
+.vercel/
+.env*
+*.tsbuildinfo
+npm-debug.log*
+.DS_Store

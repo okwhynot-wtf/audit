@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { AUDIT, DUDIT, Answers, setAnswer, total } from "../src/instruments";
+import { createReport, PdfLibrary } from "../src/report";
+
+const highest: Answers = Object.fromEntries([...AUDIT, ...DUDIT].map(q => [q.id, q.options.at(-1)!]));
+assert.equal(total("audit", highest), 40, "AUDIT maximum must be 40");
+assert.equal(total("dudit", highest), 44, "DUDIT maximum must be 44");
+assert.equal(total("audit", {}), null, "Missing responses must not become zero");
+assert.equal(total("dudit", { "dudit-1": DUDIT[0].options[0] }), null, "No unverified DUDIT skip rule");
+assert.deepEqual(DUDIT[9].options.map(o => o.score), [0, 2, 4]);
+assert.deepEqual(DUDIT[10].options.map(o => o.score), [0, 2, 4]);
+assert.deepEqual(AUDIT[8].options.map(o => o.score), [0, 2, 4]);
+const routed = setAnswer({}, AUDIT[0], AUDIT[0].options[0]);
+assert.equal(Object.values(routed).filter(a => a.skipped).length, 7);
+const historical = { ...routed, "audit-9": AUDIT[8].options[1], "audit-10": AUDIT[9].options[1] };
+assert.equal(total("audit", historical), 4, "Historical harms still contribute when current use is Never");
+const restored = setAnswer(historical, AUDIT[0], AUDIT[0].options[1]);
+assert.equal(total("audit", restored), null, "Changing Never back to drinking must require questions 2-8");
+assert.equal(restored["audit-2"], undefined);
+assert.equal(restored["audit-9"].score, 2);
+
+const require = createRequire(import.meta.url);
+const runtimeModules = process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES;
+const pdf = require(runtimeModules ? `${runtimeModules}/pdf-lib` : "pdf-lib") as PdfLibrary;
+const output = process.argv[2] || fileURLToPath(new URL("../tmp/sample-report.pdf", import.meta.url));
+await mkdir(dirname(output), { recursive: true });
+const bytes = await createReport({ selection: "both", answers: highest, reference: "SAMPLE-104", date: "2026-11-10T04:00:00.000Z" }, pdf);
+await writeFile(output, bytes);
+console.log("PASS: scoring bounds, special item weights, incomplete data and reversible AUDIT routing. Sample PDF generated.");
